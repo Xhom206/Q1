@@ -1,0 +1,667 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>3D Studio — редактор моделей</title>
+
+  <style>
+    * { box-sizing: border-box; }
+
+    :root {
+      color-scheme: dark;
+      font-family: Inter, system-ui, sans-serif;
+      background: #10131c;
+      color: #eef1ff;
+    }
+
+    body { margin: 0; overflow: hidden; }
+
+    button, input, select { font: inherit; }
+
+    button, select {
+      background: #252c40;
+      color: #eef1ff;
+      border: 1px solid #39425c;
+      border-radius: 9px;
+      padding: 10px 12px;
+    }
+
+    button { cursor: pointer; }
+    button:hover { background: #35405e; }
+    button.active { background: #6258db; border-color: #9e96ff; }
+    button:disabled { opacity: .4; cursor: default; }
+
+    header {
+      height: 64px;
+      padding: 0 20px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      background: #181d2b;
+      border-bottom: 1px solid #30384c;
+      gap: 12px;
+    }
+
+    .brand { font-size: 20px; font-weight: 750; }
+    .brand span { color: #a39aff; }
+    .actions { display: flex; gap: 8px; }
+
+    main {
+      display: grid;
+      grid-template-columns: 260px 1fr;
+      height: calc(100dvh - 64px);
+    }
+
+    aside {
+      padding: 18px;
+      background: #181d2b;
+      border-right: 1px solid #30384c;
+      overflow-y: auto;
+    }
+
+    h2 {
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 1.2px;
+      color: #a6aec8;
+      margin: 22px 0 12px;
+    }
+
+    h2:first-child { margin-top: 0; }
+    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+    .stack { display: grid; gap: 8px; }
+    .field { display: grid; gap: 7px; margin-bottom: 12px; }
+    label, .hint { font-size: 12px; color: #acb6d1; }
+    .hint { line-height: 1.7; }
+
+    input[type="text"], input[type="number"] {
+      width: 100%;
+      min-width: 0;
+      padding: 8px;
+      border: 1px solid #39425c;
+      border-radius: 7px;
+      background: #111724;
+      color: white;
+    }
+
+    input[type="color"] {
+      width: 100%;
+      height: 38px;
+      border: 0;
+      padding: 3px;
+      background: #252c40;
+      border-radius: 8px;
+      cursor: pointer;
+    }
+
+    .vector {
+      display: grid;
+      grid-template-columns: 20px repeat(3, minmax(0, 1fr));
+      gap: 5px;
+      align-items: center;
+      margin: 7px 0;
+    }
+
+    .vector > span { color: #a6aec8; font-size: 12px; }
+    .axis-labels {
+      display: grid;
+      grid-template-columns: 20px repeat(3, 1fr);
+      text-align: center;
+      color: #8993af;
+      font-size: 11px;
+    }
+
+    #objects { width: 100%; min-height: 110px; padding: 6px; }
+    #objects option { padding: 7px; border-radius: 4px; }
+
+    #viewport { position: relative; min-width: 0; overflow: hidden; }
+    canvas { display: block; touch-action: none; }
+
+    .badge {
+      position: absolute;
+      left: 16px;
+      top: 16px;
+      pointer-events: none;
+      padding: 9px 12px;
+      background: #151b2ddd;
+      border: 1px solid #39425c;
+      border-radius: 9px;
+      font-size: 12px;
+    }
+
+    #status {
+      position: absolute;
+      bottom: 14px;
+      left: 16px;
+      right: 16px;
+      pointer-events: none;
+      color: #c1cbe0;
+      font-size: 12px;
+      text-shadow: 0 1px 4px black;
+    }
+
+    .danger { color: #ffabb7; }
+    [hidden] { display: none !important; }
+
+    @media (max-width: 650px) {
+      main { grid-template-columns: 190px 1fr; }
+      aside { padding: 12px; }
+      header { padding: 0 10px; }
+      .brand { font-size: 16px; }
+      button { padding: 9px 7px; font-size: 12px; }
+      .actions { gap: 5px; }
+    }
+  </style>
+
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://cdn.jsdelivr.net/npm/three@0.160.1/build/three.module.js",
+        "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.1/examples/jsm/"
+      }
+    }
+  </script>
+</head>
+
+<body>
+  <header>
+    <div class="brand">3D <span>Studio</span></div>
+    <div class="actions">
+      <button id="save">Сохранить</button>
+      <button id="open">Открыть</button>
+      <button id="export">OBJ</button>
+    </div>
+  </header>
+
+  <main>
+    <aside>
+      <h2>Добавить фигуру</h2>
+      <div class="grid">
+        <button data-shape="box">Куб</button>
+        <button data-shape="sphere">Сфера</button>
+        <button data-shape="cylinder">Цилиндр</button>
+        <button data-shape="cone">Конус</button>
+        <button data-shape="torus">Тор</button>
+        <button data-shape="plane">Плоскость</button>
+      </div>
+
+      <h2>Инструменты</h2>
+      <div class="stack">
+        <button data-mode="translate" class="active">Перемещение · W</button>
+        <button data-mode="rotate">Вращение · E</button>
+        <button data-mode="scale">Масштаб · R</button>
+        <button id="focus">Приблизить к объекту · F</button>
+      </div>
+
+      <h2>Объекты</h2>
+      <select id="objects" size="5" aria-label="Объекты сцены"></select>
+
+      <h2>Свойства</h2>
+      <div id="empty" class="hint">Выбери объект на сцене или в списке.</div>
+
+      <div id="properties" hidden>
+        <div class="field">
+          <label for="name">Название</label>
+          <input id="name" type="text" maxlength="80">
+        </div>
+
+        <div class="field">
+          <label for="color">Цвет</label>
+          <input id="color" type="color">
+        </div>
+
+        <div class="axis-labels">
+          <span></span><span>X</span><span>Y</span><span>Z</span>
+        </div>
+        <div id="vectors"></div>
+
+        <div class="grid" style="margin-top:12px">
+          <button id="duplicate">Копия</button>
+          <button id="delete" class="danger">Удалить</button>
+        </div>
+      </div>
+
+      <h2>Управление</h2>
+      <div class="hint">
+        Клик — выбрать объект.<br>
+        Перетаскивание фона — вращать камеру.<br>
+        Правая кнопка — сдвиг камеры.<br>
+        Колесо — приближение.<br>
+        Delete — удалить объект.<br>
+        Escape — снять выделение.<br>
+        Проект сохраняется в JSON.<br>
+        OBJ экспортирует геометрию без цветов.
+      </div>
+    </aside>
+
+    <section id="viewport">
+      <div class="badge">Перспектива · 3D-редактор</div>
+      <div id="status" role="status">Загрузка редактора…</div>
+    </section>
+  </main>
+
+  <input id="file" type="file" accept=".json,application/json" hidden>
+
+  <script type="module">
+    import * as THREE from 'three';
+    import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+    import { TransformControls } from 'three/addons/controls/TransformControls.js';
+    import { OBJExporter } from 'three/addons/exporters/OBJExporter.js';
+
+    const $ = id => document.getElementById(id);
+    const viewport = $('viewport');
+    const status = text => $('status').textContent = text;
+
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color('#101522');
+
+    const camera = new THREE.PerspectiveCamera(50, 1, 0.1, 2000);
+    camera.position.set(7, 6, 9);
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+    renderer.outputColorSpace = THREE.SRGBColorSpace;
+    viewport.appendChild(renderer.domElement);
+
+    const orbit = new OrbitControls(camera, renderer.domElement);
+    orbit.enableDamping = true;
+    orbit.target.set(0, 1, 0);
+
+    scene.add(new THREE.HemisphereLight(0xcbdcff, 0x505066, 2));
+
+    const light = new THREE.DirectionalLight(0xffffff, 3);
+    light.position.set(5, 10, 7);
+    scene.add(light);
+
+    scene.add(new THREE.GridHelper(100, 100, 0x58658b, 0x273149));
+    scene.add(new THREE.AxesHelper(2));
+
+    const models = new THREE.Group();
+    scene.add(models);
+
+    const transform = new TransformControls(camera, renderer.domElement);
+    scene.add(transform);
+
+    const outline = new THREE.BoxHelper();
+    outline.material.color.set('#b0a4ff');
+    outline.visible = false;
+    scene.add(outline);
+
+    let selected = null;
+    let count = 0;
+
+    const labels = {
+      box: 'Куб',
+      sphere: 'Сфера',
+      cylinder: 'Цилиндр',
+      cone: 'Конус',
+      torus: 'Тор',
+      plane: 'Плоскость'
+    };
+
+    function geometry(type) {
+      switch (type) {
+        case 'box': return new THREE.BoxGeometry(1, 1, 1);
+        case 'sphere': return new THREE.SphereGeometry(.65, 32, 24);
+        case 'cylinder': return new THREE.CylinderGeometry(.5, .5, 1.2, 32);
+        case 'cone': return new THREE.ConeGeometry(.6, 1.3, 32);
+        case 'torus': return new THREE.TorusGeometry(.6, .2, 16, 48);
+        case 'plane': return new THREE.PlaneGeometry(2, 2);
+        default: throw new Error('Неизвестный тип фигуры');
+      }
+    }
+
+    function makeMesh(type, color = '#8c80ff') {
+      const mesh = new THREE.Mesh(
+        geometry(type),
+        new THREE.MeshStandardMaterial({
+          color,
+          roughness: .45,
+          metalness: .12,
+          side: THREE.DoubleSide
+        })
+      );
+      mesh.userData.type = type;
+      return mesh;
+    }
+
+    function refreshList() {
+      $('objects').replaceChildren();
+      for (const mesh of models.children) {
+        const option = new Option(mesh.name, mesh.uuid);
+        option.selected = mesh === selected;
+        $('objects').add(option);
+      }
+      if (!selected) $('objects').selectedIndex = -1;
+    }
+
+    function select(mesh) {
+      selected = mesh;
+      transform.detach();
+      if (mesh) transform.attach(mesh);
+
+      outline.visible = Boolean(mesh);
+      $('properties').hidden = !mesh;
+      $('empty').hidden = Boolean(mesh);
+
+      refreshList();
+      syncProperties();
+      status(mesh ? `Выбран: ${mesh.name}` : 'Объект не выбран');
+    }
+
+    function add(type) {
+      const mesh = makeMesh(type);
+      mesh.name = `${labels[type]} ${++count}`;
+      mesh.position.set(0, type === 'plane' ? .02 : .8, 0);
+      if (type === 'plane') mesh.rotation.x = -Math.PI / 2;
+      models.add(mesh);
+      select(mesh);
+    }
+
+    const vectorDefinitions = [
+      ['position', 'П', 'Позиция', .1],
+      ['rotation', 'В', 'Вращение в градусах', 5],
+      ['scale', 'М', 'Масштаб', .1]
+    ];
+
+    for (const [property, label, title, step] of vectorDefinitions) {
+      const row = document.createElement('div');
+      row.className = 'vector';
+      row.title = title;
+      const caption = document.createElement('span');
+      caption.textContent = label;
+      row.appendChild(caption);
+
+      for (const axis of ['x', 'y', 'z']) {
+        const input = document.createElement('input');
+        input.type = 'number';
+        input.step = step;
+        input.id = `${property}-${axis}`;
+        input.setAttribute('aria-label', `${title}: ${axis}`);
+        if (property === 'scale') input.min = .01;
+
+        input.addEventListener('change', () => {
+          if (!selected || !Number.isFinite(input.valueAsNumber)) return;
+          let value = input.valueAsNumber;
+          if (property === 'rotation') value = THREE.MathUtils.degToRad(value);
+          if (property === 'scale') value = Math.max(.01, value);
+          selected[property][axis] = value;
+          syncProperties();
+        });
+
+        row.appendChild(input);
+      }
+      $('vectors').appendChild(row);
+    }
+
+    function syncProperties() {
+      if (!selected) return;
+      $('name').value = selected.name;
+      $('color').value = '#' + selected.material.color.getHexString();
+
+      for (const [property] of vectorDefinitions) {
+        for (const axis of ['x', 'y', 'z']) {
+          let value = selected[property][axis];
+          if (property === 'rotation') value = THREE.MathUtils.radToDeg(value);
+          const input = $(`${property}-${axis}`);
+          if (document.activeElement !== input) {
+            input.value = Number(value.toFixed(3));
+          }
+        }
+      }
+    }
+
+    transform.addEventListener('dragging-changed', event => {
+      orbit.enabled = !event.value;
+    });
+    transform.addEventListener('objectChange', syncProperties);
+
+    document.querySelectorAll('[data-shape]').forEach(button => {
+      button.onclick = () => add(button.dataset.shape);
+    });
+
+    function setMode(mode) {
+      transform.setMode(mode);
+      document.querySelectorAll('[data-mode]').forEach(button => {
+        button.classList.toggle('active', button.dataset.mode === mode);
+      });
+    }
+
+    document.querySelectorAll('[data-mode]').forEach(button => {
+      button.onclick = () => setMode(button.dataset.mode);
+    });
+
+    $('objects').onchange = () => {
+      select(models.children.find(mesh => mesh.uuid === $('objects').value));
+    };
+
+    $('name').oninput = () => {
+      if (!selected) return;
+      selected.name = $('name').value;
+      refreshList();
+    };
+
+    $('color').oninput = () => {
+      if (selected) selected.material.color.set($('color').value);
+    };
+
+    function removeSelected() {
+      if (!selected) return;
+      const mesh = selected;
+      select(null);
+      models.remove(mesh);
+      mesh.geometry.dispose();
+      mesh.material.dispose();
+      refreshList();
+    }
+
+    $('delete').onclick = removeSelected;
+
+    $('duplicate').onclick = () => {
+      if (!selected) return;
+      const copy = selected.clone();
+      copy.geometry = selected.geometry.clone();
+      copy.material = selected.material.clone();
+      copy.name = `${selected.name} — копия`;
+      copy.position.x += 1.2;
+      models.add(copy);
+      select(copy);
+    };
+
+    function focusSelected() {
+      if (!selected) return;
+      const box = new THREE.Box3().setFromObject(selected);
+      const center = box.getCenter(new THREE.Vector3());
+      const radius = box.getBoundingSphere(new THREE.Sphere()).radius;
+      const direction = camera.position.clone().sub(orbit.target).normalize();
+      const halfFov = THREE.MathUtils.degToRad(camera.fov / 2);
+      const horizontal = Math.atan(Math.tan(halfFov) * camera.aspect);
+      const distance = Math.max(
+        2,
+        radius / Math.sin(Math.min(halfFov, horizontal)) * 1.25
+      );
+      orbit.target.copy(center);
+      camera.position.copy(center).addScaledVector(direction, distance);
+      orbit.update();
+    }
+
+    $('focus').onclick = focusSelected;
+
+    const raycaster = new THREE.Raycaster();
+    const pointer = new THREE.Vector2();
+    let pointerStart = null;
+
+    renderer.domElement.addEventListener('pointerdown', event => {
+      pointerStart = {
+        x: event.clientX,
+        y: event.clientY,
+        onGizmo: Boolean(transform.axis)
+      };
+    });
+
+    renderer.domElement.addEventListener('pointerup', event => {
+      const start = pointerStart;
+      pointerStart = null;
+      if (!start || event.button !== 0 || start.onGizmo || transform.axis) return;
+      if (Math.hypot(event.clientX - start.x, event.clientY - start.y) > 5) return;
+
+      const rect = renderer.domElement.getBoundingClientRect();
+      pointer.set(
+        ((event.clientX - rect.left) / rect.width) * 2 - 1,
+        -((event.clientY - rect.top) / rect.height) * 2 + 1
+      );
+      raycaster.setFromCamera(pointer, camera);
+      const hits = raycaster.intersectObjects(models.children, false);
+      select(hits[0]?.object ?? null);
+    });
+
+    window.addEventListener('keydown', event => {
+      if (['INPUT', 'SELECT', 'TEXTAREA'].includes(document.activeElement.tagName)) {
+        return;
+      }
+
+      const key = event.key.toLowerCase();
+      if (key === 'w') setMode('translate');
+      if (key === 'e') setMode('rotate');
+      if (key === 'r') setMode('scale');
+      if (key === 'f') focusSelected();
+      if (key === 'escape') select(null);
+      if (key === 'delete') removeSelected();
+    });
+
+    function download(content, filename, type) {
+      const url = URL.createObjectURL(new Blob([content], { type }));
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = filename;
+      link.click();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    }
+
+    $('save').onclick = () => {
+      const project = {
+        format: 'simple-3d-studio',
+        version: 1,
+        objects: models.children.map(mesh => ({
+          type: mesh.userData.type,
+          name: mesh.name,
+          color: '#' + mesh.material.color.getHexString(),
+          position: mesh.position.toArray(),
+          rotation: [mesh.rotation.x, mesh.rotation.y, mesh.rotation.z],
+          scale: mesh.scale.toArray()
+        }))
+      };
+
+      download(
+        JSON.stringify(project, null, 2),
+        'project.json',
+        'application/json'
+      );
+      status('Проект сохранён');
+    };
+
+    $('export').onclick = () => {
+      models.updateMatrixWorld(true);
+      download(new OBJExporter().parse(models), 'model.obj', 'text/plain');
+      status('Геометрия экспортирована в OBJ');
+    };
+
+    $('open').onclick = () => $('file').click();
+
+    function validVector(value, positive = false) {
+      return Array.isArray(value) &&
+        value.length === 3 &&
+        value.every(n =>
+          typeof n === 'number' &&
+          Number.isFinite(n) &&
+          Math.abs(n) <= 100000 &&
+          (!positive || n >= .01)
+        );
+    }
+
+    $('file').onchange = async event => {
+      const file = event.target.files[0];
+      if (!file) return;
+
+      const pending = [];
+
+      try {
+        if (file.size > 5 * 1024 * 1024) {
+          throw new Error('Максимальный размер проекта — 5 МБ');
+        }
+
+        const data = JSON.parse(await file.text());
+
+        if (
+          data.format !== 'simple-3d-studio' ||
+          data.version !== 1 ||
+          !Array.isArray(data.objects) ||
+          data.objects.length > 1000
+        ) {
+          throw new Error('Неподдерживаемый формат проекта');
+        }
+
+        for (const item of data.objects) {
+          if (
+            !Object.hasOwn(labels, item.type) ||
+            typeof item.name !== 'string' ||
+            typeof item.color !== 'string' ||
+            !/^#[0-9a-f]{6}$/i.test(item.color) ||
+            !validVector(item.position) ||
+            !validVector(item.rotation) ||
+            !validVector(item.scale, true)
+          ) {
+            throw new Error('Некорректные данные объекта');
+          }
+
+          const mesh = makeMesh(item.type, item.color);
+          pending.push(mesh);
+          mesh.name = item.name.slice(0, 80);
+          mesh.position.fromArray(item.position);
+          mesh.rotation.set(...item.rotation);
+          mesh.scale.fromArray(item.scale);
+        }
+
+        select(null);
+
+        for (const mesh of [...models.children]) {
+          models.remove(mesh);
+          mesh.geometry.dispose();
+          mesh.material.dispose();
+        }
+
+        for (const mesh of pending) models.add(mesh);
+        count = models.children.length;
+        refreshList();
+        status(`Проект открыт. Объектов: ${count}`);
+      } catch (error) {
+        for (const mesh of pending) {
+          mesh.geometry.dispose();
+          mesh.material.dispose();
+        }
+        status(`Ошибка: ${error.message}`);
+      } finally {
+        event.target.value = '';
+      }
+    };
+
+    new ResizeObserver(() => {
+      const width = viewport.clientWidth;
+      const height = viewport.clientHeight;
+      camera.aspect = width / Math.max(height, 1);
+      camera.updateProjectionMatrix();
+      renderer.setSize(width, height);
+    }).observe(viewport);
+
+    renderer.setAnimationLoop(() => {
+      orbit.update();
+      if (selected) outline.setFromObject(selected);
+      renderer.render(scene, camera);
+    });
+
+    add('box');
+    status('Редактор готов. Добавляй фигуры и собирай модель.');
+  </script>
+</body>
+</html>
